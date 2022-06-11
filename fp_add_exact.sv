@@ -1,22 +1,22 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
+// Copyright: Chris Larsen 2022
 // Engineer: 
-// 
+//
 // Create Date: 05/13/2022 01:10:46 PM
 // Design Name: 
 // Module Name: fp_add_exact
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
-// Description: 
-// 
+// Description: Floating Point Addition Module
+//
 // Dependencies: 
-// 
+//
 // Revision:
 // Revision 0.01 - File Created
 // Additional Comments:
-// 
+//
 //////////////////////////////////////////////////////////////////////////////////
 
 
@@ -25,28 +25,28 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
   parameter NSIG = 10;
   `include "ieee-754-flags.vh"
   localparam CLOG2_NSIG = $clog2(NSIG+1);
-  input [NEXP+NSIG:0] a, b;
-  input [NRAS:0] ra;
-  output [NEXP+NSIG:0] s;
-  output [NTYPES-1:0] sFlags;
-  reg [NTYPES-1:0] sFlags;
-  output [NEXCEPTIONS-1:0] exception;
+  input [NEXP+NSIG:0] a, b;   // Operands
+  input [NRAS:0] ra;          // Rounding Attribute
+  output [NEXP+NSIG:0] s;     // Sum/Difference
+  output [NTYPES-1:0] sFlags; // Type of return value: sNaN, qNaN, Infinity,
+  reg [NTYPES-1:0] sFlags;    // Zero, Normal, or Subnormal.
+  output [NEXCEPTIONS-1:0] exception; // Which exceptions were signalled?
   reg [NEXCEPTIONS-1:0] exception;
-  wire inexact;
 
-  wire signed [NEXP+1:0] aExp, bExp, expOut;
-  wire signed [NEXP+1:0] qExp, expIn;
-  wire [NSIG:0] aSig, bSig, sigOut;
-  reg signed [NSIG+5:0] dTmp, bTmp[15:1], iTmp[15:1];
-  reg [NSIG+5:0] tSig;
-  wire [NSIG:0] qSig;
-  wire [NTYPES-1:0] aFlags, bFlags;
-
-  fp_class #(NEXP,NSIG) aClass(a, aExp, aSig, aFlags);
-  fp_class #(NEXP,NSIG) bClass(b, bExp, bSig, bFlags);
+  wire inexact; // Returned by round module. Used to set corresponding
+                // flag in the exception vector.
 
   wire aSign = a[NEXP+NSIG];
   wire bSign = b[NEXP+NSIG];
+  wire signed [NEXP+1:0] aExp, bExp;
+  wire [NSIG:0] aSig, bSig;
+  wire [NTYPES-1:0] aFlags, bFlags;
+
+  wire signed [NEXP+1:0] expIn, expOut;
+  wire [NSIG:0] sigOut;
+
+  fp_class #(NEXP,NSIG) aClass(a, aExp, aSig, aFlags);
+  fp_class #(NEXP,NSIG) bClass(b, bExp, bSig, bFlags);
 
   reg signed [NSIG+1:0] shiftAmt;
   // augendSig: Significand of the operand with the larger exponent
@@ -86,16 +86,16 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
   // Adjusted sumSign after taking absolute value of sumSig.
   wire absSign;
 
-  // shiftCount to renormlize after adding to numbers with opposite
-  // signs.
-  reg [3:0] shiftCount;
+  // na is the shift count to renormalize after adding two numbers with
+  // opposite signs.
   reg [CLOG2_NSIG-1:0] na;
   reg [EMAX+2:EMIN-NSIG] mask = ~0;
 
   wire Cout1, Cout2;
   reg subtract, zero, e0, si;
 
-  reg [NEXP+NSIG:0] alwaysS;
+  reg [NEXP+NSIG:0] alwaysS; // Sum/Difference generated inside the
+                             // always block.
 
   integer i;
 
@@ -103,7 +103,7 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
   begin
     sFlags = 0;
     exception = 0;
-    subtract = a[NEXP+NSIG] ^ b[NEXP+NSIG];
+    subtract = aSign ^ bSign;
 
     if (aFlags[SNAN] | bFlags[SNAN])
       begin
@@ -146,7 +146,7 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
 
         if (aExp < bExp)
           begin
-            sumSign = b[NEXP+NSIG];
+            sumSign = bSign;
             shiftAmt = bExp - aExp;
             augendSig[EMAX:EMAX-NSIG] = bSig;
             addendSig[EMAX:EMAX-NSIG] = aSig;
@@ -154,7 +154,7 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
           end
         else
           begin
-            sumSign = a[NEXP+NSIG];
+            sumSign = aSign;
             shiftAmt = aExp - bExp;
             augendSig[EMAX:EMAX-NSIG] = aSig;
             addendSig[EMAX:EMAX-NSIG] = bSig;
@@ -223,9 +223,9 @@ module fp_add_exact(a, b, ra, s, sFlags, exception);
   // Compute abs(sumSig):
   // If sumSig is negative then sumSig[NSIG+2] (the sign bit) will be 1.
   // If sumSig is negative then "sumSig^{2*NSIG+6{sumSig[NSIG+2]}}" is the
-  // ones complement of sumSig. Otherwise this value is just sumSig.
+  // 1's complement of sumSig. Otherwise this value is just sumSig.
   // By using the sign bit of sumSig as the carry in value when sumSig is
-  // negative we compute the twos complement of sumSig, i.e., we find sumSig's
+  // negative we compute the 2's complement of sumSig, i.e., we find sumSig's
   // absolute value. If sumSig is positive, or zero, the output from this
   // adder is sumSig.
   padder42 U1({EMAX-(EMIN-NSIG)+3{1'b0}}, sumSig^{EMAX-(EMIN-NSIG)+3{sumSig[EMAX+2]}}, sumSig[EMAX+2],
